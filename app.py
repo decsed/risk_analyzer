@@ -54,7 +54,10 @@ if not df.empty and sum(shares.values()) > 0:
     
     portfolio_daily_returns = total_portfolio_value.pct_change().dropna()
     rel_daily_returns = df.pct_change().dropna()
-    rf_annual = float(rf_data.dropna().iloc[-1]) / 100
+    
+    # JAVÍTOTT RÉSZ: numpy.ravel() használata a stabil számkinyeréshez
+    rf_annual = float(np.ravel(rf_data.dropna())[-1]) / 100
+
     daily_volatility = portfolio_daily_returns.std()
     portfolio_volatility = daily_volatility * np.sqrt(252)
     annualized_portfolio_return = portfolio_daily_returns.mean() * 252
