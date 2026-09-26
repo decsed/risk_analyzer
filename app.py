@@ -12,7 +12,6 @@ def get_financial_data(tickers_tuple, history):
     tickers_list = list(tickers_tuple)
     
     if tickers_list:
-        # Hozzáadva: auto_adjust=False, hogy az 'Adj Close' oszlop biztosan létezzen
         df = yf.download(tickers_list, period=history, auto_adjust=False)['Adj Close']
         if isinstance(df, pd.Series):
             df = df.to_frame(tickers_list[0])
@@ -56,7 +55,6 @@ if not df.empty and sum(shares.values()) > 0:
     portfolio_daily_returns = total_portfolio_value.pct_change().dropna()
     rel_daily_returns = df.pct_change().dropna()
     
-    # JAVÍTOTT RÉSZ: numpy.ravel() használata a stabil számkinyeréshez
     rf_annual = float(np.ravel(rf_data.dropna())[-1]) / 100
 
     daily_volatility = portfolio_daily_returns.std()
@@ -114,8 +112,8 @@ if not df.empty and sum(shares.values()) > 0:
             st.pyplot(fig3)
 
     with center:
-        st.subheader("Kumulált Portfólió Hozamok Adatsor")
-        st.dataframe((cumulative_returns * 100).round(2), use_container_width=True)
+        st.subheader("Kumulált Portfólió Hozamok")
+        st.line_chart((cumulative_returns * 100).round(2))
 
 else:
     st.warning("Adj meg legalább egy tickert és állítsd be a darabszámokat!")
