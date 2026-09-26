@@ -12,14 +12,18 @@ def get_financial_data(tickers_tuple, history):
     tickers_list = list(tickers_tuple)
     
     if tickers_list:
-        df = yf.download(tickers_list, period=history)['Close']
+        # Változtatás: 'Close' helyett 'Adj Close'
+        df = yf.download(tickers_list, period=history)['Adj Close']
         if isinstance(df, pd.Series):
             df = df.to_frame(tickers_list[0])
     else:
         df = pd.DataFrame()
 
-    benchmark_data = yf.download("^GSPC", period=history)['Close']
-    rf_data = yf.download("^TNX", period=history)["Close"]
+    # Változtatás: A benchmarknál is 'Adj Close'
+    benchmark_data = yf.download("^GSPC", period=history)['Adj Close']
+    
+    # A kockázatmentes hozamnál (kötvény) maradhat a 'Close'
+    rf_data = yf.download("^TNX", period=history)["Close"] 
     
     return df, benchmark_data, rf_data
 
