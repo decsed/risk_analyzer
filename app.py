@@ -44,6 +44,10 @@ with left:
         )
 
 if not df.empty and sum(shares.values()) > 0:
+    missing_data_tickers = [ticker for ticker in df.columns if df[ticker].isnull().any()]
+    if missing_data_tickers:
+        st.warning(f"⚠️ **Figyelem:** Az alábbi részvényeknek nincs meg a teljes adatsora a választott időtávon (pl. frissebb IPO): **{', '.join(missing_data_tickers)}**. A pontos számítások érdekében a portfólió elemzése a legfiatalabb részvény indulásához lett igazítva!")
+    df = df.dropna()
     
     portfolio_value_df = pd.DataFrame(index=df.index)
     for ticker in tickers:
