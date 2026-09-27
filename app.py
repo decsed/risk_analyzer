@@ -24,6 +24,40 @@ def get_financial_data(tickers_tuple, start_date):
     
     return df, benchmark_data, rf_data
 
+def parse_portfolio_txt(file_content):
+    portfolio = {}
+    errors = []
+
+    for line_number, raw_line in enumerate(file_content.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+
+        parts = [part.strip() for part in line.replace(';', ',').split(',')]
+        if len(parts) == 1:
+            parts = line.split()
+
+        if len(parts) != 3:
+            errors.append(f"{line_number}. sor: ticker, mennyiség és dátum szükséges")
+            continue
+
+        ticker, shares_text, buy_date_text = parts
+        try:
+            shares = float(shares_text.replace(',', '.'))
+            buy_date = datetime.datetime.strptime(buy_date_text, '%Y%m%d').date()
+            if not ticker or shares <= 0:
+                raise ValueError
+        except ValueError:
+            errors.append(f"{line_number}. sor: hibás adat ({raw_line.strip()})")
+            continue
+
+        portfolio[ticker.upper()] = {
+            'shares': shares,
+            'buy_date': buy_date
+        }
+
+    return portfolio, errors
+
 if 'portfolio' not in st.session_state:
     st.session_state.portfolio = {}
 
@@ -42,6 +76,26 @@ with left:
                 'shares': new_shares,
                 'buy_date': new_buy_date
             }
+            st.rerun()
+
+    st.subheader("Portfólió importálása TXT-ből")
+    st.caption("Formátum soronként: TICKER, mennyiség, YYYYMMDD")
+    uploaded_file = st.file_uploader("TXT-fájl kiválasztása", type=['txt'])
+    import_button = st.button("Portfólió importálása", disabled=uploaded_file is None)
+
+    if import_button and uploaded_file is not None:
+        imported_portfolio, import_errors = parse_portfolio_txt(
+            uploaded_file.getvalue().decode('utf-8-sig')
+        )
+        if import_errors:
+            st.error("Az import sikertelen:")
+            for error in import_errors:
+                st.write(f"- {error}")
+        elif not imported_portfolio:
+            st.error("A TXT-fájl nem tartalmaz importálható adatot.")
+        else:
+            st.session_state.portfolio = imported_portfolio
+            st.success(f"{len(imported_portfolio)} részvény sikeresen importálva.")
             st.rerun()
 
     st.subheader("Jelenlegi Portfólió")
