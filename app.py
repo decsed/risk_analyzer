@@ -4,46 +4,66 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import streamlit as st
 import pandas as pd
+import datetime
 
 st.set_page_config(layout="wide")
 
 @st.cache_data(show_spinner="Adatok letöltése...")
-def get_financial_data(tickers_tuple, history):
+def get_financial_data(tickers_tuple, start_date):
     tickers_list = list(tickers_tuple)
     
     if tickers_list:
-        df = yf.download(tickers_list, period=history, auto_adjust=False)['Adj Close']
+        df = yf.download(tickers_list, start=start_date, auto_adjust=False)['Adj Close']
         if isinstance(df, pd.Series):
             df = df.to_frame(tickers_list[0])
     else:
         df = pd.DataFrame()
 
-    benchmark_data = yf.download("^GSPC", period=history, auto_adjust=False)['Adj Close']
-    rf_data = yf.download("^TNX", period=history)["Close"]
+    benchmark_data = yf.download("^GSPC", start=start_date, auto_adjust=False)['Adj Close']
+    rf_data = yf.download("^TNX", start=start_date)["Close"]
     
     return df, benchmark_data, rf_data
+
+if 'portfolio' not in st.session_state:
+    st.session_state.portfolio = {}
 
 left, center, right = st.columns([1,2,1])
 
 with left:
-    ticker_input = st.text_input("Add tickers (szóközzel elválasztva)", "AAPL MSFT NVDA TSLA")
-    tickers = [t.upper() for t in ticker_input.split() if t]
-    history = st.text_input("Define history (pl. 1y, 5y, ytd)", "1y")
+    st.subheader("Részvény hozzáadása")
+    with st.form("add_stock_form", clear_on_submit=True):
+        new_ticker = st.text_input("Ticker (pl. AAPL)").upper()
+        new_shares = st.number_input("Darabszám", min_value=0.0, step=1.0, value=10.0)
+        new_buy_date = st.date_input("Vásárlás dátuma", value=datetime.date(2023, 1, 1))
+        submit_button = st.form_submit_button("Hozzáadás / Módosítás")
+        
+        if submit_button and new_ticker:
+            st.session_state.portfolio[new_ticker] = {
+                'shares': new_shares,
+                'buy_date': new_buy_date
+            }
+            st.rerun()
 
-df, benchmark_data, rf_data = get_financial_data(tuple(tickers), history)
+    st.subheader("Jelenlegi Portfólió")
+    if not st.session_state.portfolio:
+        st.info("Még nincs részvény a portfólióban.")
+    else:
+        for t, data in list(st.session_state.portfolio.items()):
+            col1, col2 = st.columns([4, 1])
+            col1.write(f"**{t}**: {data['shares']} db ({data['buy_date']})")
+            if col2.button("🗑️", key=f"del_{t}"):
+                del st.session_state.portfolio[t]
+                st.rerun()
 
-shares = {}
-with left:
-    st.subheader("Részvények darabszáma")
-    for ticker in tickers:
-        shares[ticker] = st.number_input(
-            f"{ticker} shares",
-            min_value=0.0,
-            value=10.0,
-            step=1.0
-        )
+tickers = list(st.session_state.portfolio.keys())
 
-if not df.empty and sum(shares.values()) > 0:
+if tickers:
+    earliest_date = min([data['buy_date'] for data in st.session_state.portfolio.values()])
+    df, benchmark_data, rf_data = get_financial_data(tuple(tickers), earliest_date)
+else:
+    st.warning("Adj hozzá legalább egy részvényt a bal oldali sávban!")
+    
+if tickers and not df.empty and sum(data['shares'] for data in st.session_state.portfolio.values()) > 0:
     missing_data_tickers = [ticker for ticker in df.columns if df[ticker].isnull().any()]
     if missing_data_tickers:
         st.warning(f"⚠️ **Figyelem:** Az alábbi részvényeknek nincs meg a teljes adatsora a választott időtávon (pl. frissebb IPO): **{', '.join(missing_data_tickers)}**. A pontos számítások érdekében a portfólió elemzése a legfiatalabb részvény indulásához lett igazítva!")
@@ -52,7 +72,7 @@ if not df.empty and sum(shares.values()) > 0:
     portfolio_value_df = pd.DataFrame(index=df.index)
     for ticker in tickers:
         if ticker in df.columns:
-            portfolio_value_df[ticker] = df[ticker] * shares[ticker]
+            portfolio_value_df[ticker] = df[ticker] * st.session_state.portfolio[ticker]['shares']
             
     total_portfolio_value = portfolio_value_df.sum(axis=1)
     
