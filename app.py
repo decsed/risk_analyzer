@@ -145,8 +145,29 @@ if tickers and not df.empty and sum(data['shares'] for data in st.session_state.
                 portfolio_value_df[ticker] += stock_value.ffill().fillna(0)
             
     total_portfolio_value = portfolio_value_df.sum(axis=1)
-    
-    portfolio_daily_returns = total_portfolio_value.pct_change().dropna()
+
+    investment_flows = pd.Series(0.0, index=df.index)
+    for transaction in st.session_state.portfolio:
+        ticker = transaction['ticker']
+        if ticker not in df.columns:
+            continue
+
+        buy_date = pd.to_datetime(transaction['buy_date'])
+        available_prices = df.loc[df.index >= buy_date, ticker].dropna()
+        if not available_prices.empty:
+            first_price_date = available_prices.index[0]
+            investment_flows.loc[first_price_date] += (
+                available_prices.iloc[0] * transaction['shares']
+            )
+
+    invested_capital = investment_flows.cumsum()
+    cumulative_profit = total_portfolio_value - invested_capital
+    previous_value = total_portfolio_value.shift(1).fillna(0)
+    daily_return_denominator = previous_value + investment_flows
+    portfolio_daily_returns = (
+        (total_portfolio_value - previous_value - investment_flows)
+        / daily_return_denominator.replace(0, np.nan)
+    ).dropna()
     rel_daily_returns = df.pct_change().dropna()
     
     rf_annual = float(np.ravel(rf_data.dropna())[-1]) / 100
@@ -156,7 +177,7 @@ if tickers and not df.empty and sum(data['shares'] for data in st.session_state.
     annualized_portfolio_return = portfolio_daily_returns.mean() * 252
     sharpe = (annualized_portfolio_return - rf_annual) / portfolio_volatility
     
-    cumulative_returns = (1 + portfolio_daily_returns).cumprod() - 1
+    cumulative_returns = cumulative_profit / invested_capital.replace(0, np.nan)
     
     benchmark_daily_returns = benchmark_data.pct_change().dropna()
     benchmark_cumulative_returns = (1 + benchmark_daily_returns).cumprod() - 1
@@ -206,7 +227,7 @@ if tickers and not df.empty and sum(data['shares'] for data in st.session_state.
             st.pyplot(fig3)
 
     with center:
-        st.subheader("Kumulált Portfólió Hozamok")
+        st.subheader("Kumulált Portfólió Profit")
         st.line_chart((cumulative_returns * 100).round(2))
 
 else:
