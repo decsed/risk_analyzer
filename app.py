@@ -25,7 +25,7 @@ def get_financial_data(tickers_tuple, start_date):
     return df, benchmark_data, rf_data
 
 def parse_portfolio_txt(file_content):
-    portfolio = {}
+    portfolio = []
     errors = []
 
     for line_number, raw_line in enumerate(file_content.splitlines(), start=1):
@@ -51,15 +51,25 @@ def parse_portfolio_txt(file_content):
             errors.append(f"{line_number}. sor: hibás adat ({raw_line.strip()})")
             continue
 
-        portfolio[ticker.upper()] = {
+        portfolio.append({
+            'ticker': ticker.upper(),
             'shares': shares,
             'buy_date': buy_date
-        }
+        })
 
     return portfolio, errors
 
 if 'portfolio' not in st.session_state:
-    st.session_state.portfolio = {}
+    st.session_state.portfolio = []
+elif isinstance(st.session_state.portfolio, dict):
+    st.session_state.portfolio = [
+        {
+            'ticker': ticker,
+            'shares': data['shares'],
+            'buy_date': data['buy_date']
+        }
+        for ticker, data in st.session_state.portfolio.items()
+    ]
 
 left, center, right = st.columns([1,2,1])
 
@@ -72,10 +82,11 @@ with left:
         submit_button = st.form_submit_button("Hozzáadás / Módosítás")
         
         if submit_button and new_ticker:
-            st.session_state.portfolio[new_ticker] = {
+            st.session_state.portfolio.append({
+                'ticker': new_ticker,
                 'shares': new_shares,
                 'buy_date': new_buy_date
-            }
+            })
             st.rerun()
 
     st.subheader("Portfólió importálása TXT-ből")
@@ -95,38 +106,43 @@ with left:
             st.error("A TXT-fájl nem tartalmaz importálható adatot.")
         else:
             st.session_state.portfolio = imported_portfolio
-            st.success(f"{len(imported_portfolio)} részvény sikeresen importálva.")
+            st.success(f"{len(imported_portfolio)} tranzakció sikeresen importálva.")
             st.rerun()
 
     st.subheader("Jelenlegi Portfólió")
     if not st.session_state.portfolio:
         st.info("Még nincs részvény a portfólióban.")
     else:
-        for t, data in list(st.session_state.portfolio.items()):
+        for transaction_index, data in enumerate(st.session_state.portfolio):
             col1, col2 = st.columns([4, 1])
-            col1.write(f"**{t}**: {data['shares']} db ({data['buy_date']})")
-            if col2.button("🗑️", key=f"del_{t}"):
-                del st.session_state.portfolio[t]
+            col1.write(f"**{data['ticker']}**: {data['shares']} db ({data['buy_date']})")
+            if col2.button("🗑️", key=f"del_{transaction_index}"):
+                st.session_state.portfolio.pop(transaction_index)
                 st.rerun()
 
-tickers = list(st.session_state.portfolio.keys())
+tickers = list(dict.fromkeys(data['ticker'] for data in st.session_state.portfolio))
 
 if tickers:
-    earliest_date = min([data['buy_date'] for data in st.session_state.portfolio.values()])
+    earliest_date = min(data['buy_date'] for data in st.session_state.portfolio)
     df, benchmark_data, rf_data = get_financial_data(tuple(tickers), earliest_date)
 else:
     st.warning("Adj hozzá legalább egy részvényt a bal oldali sávban!")
     
-if tickers and not df.empty and sum(data['shares'] for data in st.session_state.portfolio.values()) > 0:
+if tickers and not df.empty and sum(data['shares'] for data in st.session_state.portfolio) > 0:
     missing_data_tickers = [ticker for ticker in df.columns if df[ticker].isnull().any()]
     if missing_data_tickers:
         st.warning(f"⚠️ **Figyelem:** Az alábbi részvényeknek nincs meg a teljes adatsora a választott időtávon (pl. frissebb IPO): **{', '.join(missing_data_tickers)}**. A pontos számítások érdekében a portfólió elemzése a legfiatalabb részvény indulásához lett igazítva!")
     df = df.dropna()
     
-    portfolio_value_df = pd.DataFrame(index=df.index)
+    portfolio_value_df = pd.DataFrame(0.0, index=df.index, columns=tickers)
     for ticker in tickers:
         if ticker in df.columns:
-            portfolio_value_df[ticker] = df[ticker] * st.session_state.portfolio[ticker]['shares']
+            for transaction in st.session_state.portfolio:
+                if transaction['ticker'] != ticker:
+                    continue
+                stock_value = df[ticker] * transaction['shares']
+                stock_value.loc[stock_value.index < pd.to_datetime(transaction['buy_date'])] = 0
+                portfolio_value_df[ticker] += stock_value.ffill().fillna(0)
             
     total_portfolio_value = portfolio_value_df.sum(axis=1)
     
